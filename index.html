@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Brave Home</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --brave-orange: #FF5500;
+            --tile-size: 60px;
+            --col-count: 4;
+        }
+
+        /* RESET & GLOBAL */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+        
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            font-family: 'Poppins', sans-serif;
+            background-color: #000;
+            color: white;
+            overflow: hidden; /* Prevent body scrolling */
+        }
+
+        /* 
+           FIX 1: BACKGROUND JITTER 
+           Using '100lvh' (Largest Viewport Height) forces the background 
+           to ignore the mobile address bar resizing. 
+        */
+        #bg-layer {
+            position: fixed;
+            top: 0; left: 0; width: 100%;
+            height: 100lvh; 
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            z-index: 0;
+            transition: filter 0.2s;
+            pointer-events: none;
+            transform: translateZ(0); /* Hardware acceleration */
+        }
+
+        /* HEADER */
+        #top-bar {
+            position: fixed; top: 0; left: 0; right: 0;
+            height: 90px;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px;
+            z-index: 100;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+            pointer-events: none; /* Let touches pass through transparent parts */
+        }
+        #top-bar > * { pointer-events: auto; } /* Re-enable clicks on buttons */
+
+        .logo {
+            font-weight: 800;
+            font-size: 60px; 
+            color: var(--brave-orange);
+            letter-spacing: -2px;
+            text-shadow: 0 4px 15px rgba(0,0,0,0.9);
+            line-height: 1;
+        }
+
+        .menu-trigger {
+            width: 44px; height: 44px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(8px);
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .icon-svg { width: 24px; height: 24px; fill: white; }
+
+        /* DROPDOWN MENU */
+        #dropdown {
+            display: none;
+            position: absolute; top: 80px; right: 20px;
+            width: 240px;
+            background: #1a1a1a; 
+            border: 1px solid #333;
+            border-radius: 16px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.9);
+            z-index: 101;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 5px;
+        }
+        #dropdown.active { display: flex; }
+        
+        .menu-item {
+            padding: 15px; border-radius: 8px;
+            font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 15px;
+            color: #eee; transition: background 0.1s;
+        }
+        .menu-item:active { background: #333; }
+        .menu-item.danger { color: #ff5555; }
+        .menu-item svg { width: 20px; height: 20px; fill: currentColor; opacity: 0.8; }
+
+        /* 
+           FIX 2: SCROLLBAR REMOVAL 
+           Targeting the specific scroll container
+        */
+        #scroll-view {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            overflow-y: scroll;
+            padding-top: 110px;
+            padding-bottom: 100px;
+            z-index: 10;
+            /* Hide Scrollbar Standard */
+            scrollbar-width: none; 
+            -ms-overflow-style: none;
+        }
+        /* Hide Scrollbar Webkit */
+        #scroll-view::-webkit-scrollbar { 
+            display: none; width: 0; height: 0; 
+        }
+
+        /* GRID */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(var(--col-count), 1fr);
+            gap: 20px 10px;
+            width: 100%; max-width: 600px;
+            margin: 0 auto; padding: 0 10px;
+        }
+
+        /* TILE */
+        .tile {
+            display: flex; flex-direction: column; align-items: center;
+            position: relative;
+        }
+        .icon-box {
+            width: var(--tile-size); height: var(--tile-size);
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; margin-bottom: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            backdrop-filter: blur(5px);
+        }
+        .icon-img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+        .label {
+            font-size: 11px; text-align: center; width: 100%;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            text-shadow: 0 1px 3px black;
+        }
+
+        /* ADD BTN */
+        .add-btn .icon-box { background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.3); }
+
+        /* DRAG & GHOST */
+        .ghost { position: absolute; z-index: 1000; transform: scale(1.15); pointer-events: none; opacity: 0.9; }
+        .placeholder { opacity: 0; }
+
+        /* MODALS */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 2000;
+            justify-content: center; align-items: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #1a1a1a; padding: 25px;
+            width: 90%; max-width: 350px;
+            border-radius: 20px; border: 1px solid #333;
+            max-height: 85vh; overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        }
+        
+        h3 { color: var(--brave-orange); margin: 0 0 20px 0; font-size: 18px; }
+        label { display: block; margin: 15px 0 8px; font-size: 12px; color: #aaa; font-weight: bold; }
+        input[type="text"], select { width: 100%; padding: 14px; background: #252525; border: 1px solid #333; border-radius: 10px; color: white; font-size: 14px; }
+        input[type="range"] { width: 100%; margin: 5px 0; }
+        
+        .btn-row { display: flex; gap: 10px; margin-top: 25px; }
+        button { flex: 1; padding: 14px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 14px; }
+        .btn-pri { background: var(--brave-orange); color: white; }
+        .btn-sec { background: #333; color: white; }
+        .btn-del { background: #d32f2f; color: white; }
+
+        /* MANAGE SHORTCUTS GRID */
+        #manage-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            max-height: 300px; overflow-y: auto;
+            margin-bottom: 20px;
+            /* Hide scrollbar here too */
+            scrollbar-width: none;
+        }
+        #manage-grid::-webkit-scrollbar { display: none; }
+        
+        .manage-item {
+            position: relative; display: flex; flex-direction: column; align-items: center;
+            opacity: 0.4; transition: opacity 0.2s;
+        }
+        .manage-item.selected { opacity: 1; }
+        .manage-item.selected .icon-box { border: 2px solid var(--brave-orange); background: rgba(255, 85, 0, 0.1); }
+        .check-overlay {
+            position: absolute; top: -5px; right: -5px;
+            background: var(--brave-orange); color: white;
+            border-radius: 50%; width: 22px; height: 22px;
+            display: none; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: bold; border: 2px solid #1a1a1a;
+        }
+        .manage-item.selected .check-overlay { display: flex; }
+
+        #file-bg, #file-bm { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+
+    <div id="top-bar">
+        <div class="logo">brave</div>
+        <div class="menu-trigger" onclick="toggleDropdown()">
+            <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </div>
+    </div>
+
+    <!-- Dropdown Menu -->
+    <div id="dropdown">
+        <div class="menu-item" onclick="openModal('modal-visuals'); toggleDropdown()">
+            <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            <span>Appearance</span>
+        </div>
+        <div class="menu-item" onclick="openManage(); toggleDropdown()">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            <span>Manage Shortcuts</span>
+        </div>
+        <div class="menu-item" onclick="document.getElementById('file-bm').click(); toggleDropdown()">
+            <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+            <span>Import Data</span>
+        </div>
+        <div class="menu-item danger" onclick="clearData(); toggleDropdown()">
+            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            <span>Clear All Data</span>
+        </div>
+    </div>
+
+    <div id="scroll-view" onclick="closeDropdown()">
+        <div id="grid"></div>
+    </div>
+
+    <!-- VISUAL SETTINGS MODAL -->
+    <div id="modal-visuals" class="modal">
+        <div class="modal-content">
+            <h3>Visuals</h3>
+            
+            <label>Background Image</label>
+            <button class="btn-sec" onclick="document.getElementById('file-bg').click()">Choose Image</button>
+            <input type="file" id="file-bg" accept="image/*">
+
+            <label>Blur</label>
+            <input type="range" id="rng-blur" min="0" max="20" value="0">
+
+            <label>Brightness</label>
+            <input type="range" id="rng-bright" min="10" max="150" value="100">
+
+            <label>Grid Columns</label>
+            <input type="range" id="rng-col" min="3" max="5" step="1" value="4">
+
+            <label>Icon Size</label>
+            <input type="range" id="rng-size" min="40" max="90" value="60">
+
+            <div class="btn-row">
+                <button class="btn-pri" onclick="closeModals()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MANAGE SHORTCUTS MODAL -->
+    <div id="modal-manage" class="modal">
+        <div class="modal-content">
+            <h3>Manage Items</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:15px;">Tap icons to select multiple.</p>
+            
+            <div id="manage-grid"></div>
+
+            <div class="btn-row">
+                <button class="btn-del" onclick="deleteSelected()">Delete Selected</button>
+                <button class="btn-sec" onclick="closeModals()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT SINGLE MODAL -->
+    <div id="modal-edit" class="modal">
+        <div class="modal-content">
+            <h3 id="edit-title">Shortcut</h3>
+            <input type="hidden" id="inp-id">
+            
+            <label>Name</label>
+            <input type="text" id="inp-name" placeholder="Site Name">
+            
+            <label>URL (Full Link)</label>
+            <input type="text" id="inp-url" placeholder="https://site.com/page">
+
+            <label>Icon Source</label>
+            <select id="inp-src" onchange="toggleCustomUrl()">
+                <option value="google">Google (Standard)</option>
+                <option value="yandex">Yandex (Best for Pirate Sites)</option>
+                <option value="ddg">DuckDuckGo</option>
+                <option value="root">Direct /favicon.ico</option>
+                <option value="custom">Custom Image Link</option>
+            </select>
+
+            <div id="div-custom-url" style="display:none">
+                <label>Image URL</label>
+                <input type="text" id="inp-custom" placeholder="https://example.com/icon.png">
+            </div>
+
+            <label>Zoom</label>
+            <input type="range" id="inp-zoom" min="50" max="150" value="100">
+
+            <div class="btn-row">
+                <button class="btn-pri" onclick="saveShortcut()">Save</button>
+                <button class="btn-sec" onclick="closeModals()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOLDER MODAL -->
+    <div id="modal-folder" class="modal">
+        <div class="modal-content">
+            <h3>Select Folder</h3>
+            <ul id="folder-list" style="list-style:none; padding:0;"></ul>
+            <button class="btn-sec" style="margin-top:15px; width:100%" onclick="closeModals()">Cancel</button>
+        </div>
+    </div>
+
+    <input type="file" id="file-bm" accept=".html">
+
+    <script>
+        // --- DATA ---
+        let apps = [];
+        let config = { bg: '', blur: 0, bright: 100, cols: 4, size: 60 };
+        let selectedIds = new Set();
+
+        // --- INIT ---
+        window.onload = () => {
+            const saved = localStorage.getItem('brave_home_v7');
+            if(saved) {
+                const data = JSON.parse(saved);
+                apps = data.apps || [];
+                config = { ...config, ...data.config };
+            }
+            applyVisuals();
+            render();
+        };
+
+        function persist() {
+            try { localStorage.setItem('brave_home_v7', JSON.stringify({ apps, config })); } catch(e) {}
+        }
+
+        // --- CORE UI ---
+        function toggleDropdown() { document.getElementById('dropdown').classList.toggle('active'); }
+        function closeDropdown() { document.getElementById('dropdown').classList.remove('active'); }
+
+        function applyVisuals() {
+            const bg = document.getElementById('bg-layer');
+            if(config.bg) bg.style.backgroundImage = `url(${config.bg})`;
+            bg.style.filter = `blur(${config.blur}px) brightness(${config.bright}%)`;
+
+            document.documentElement.style.setProperty('--col-count', config.cols);
+            document.documentElement.style.setProperty('--tile-size', config.size + 'px');
+
+            document.getElementById('rng-blur').value = config.blur;
+            document.getElementById('rng-bright').value = config.bright;
+            document.getElementById('rng-col').value = config.cols;
+            document.getElementById('rng-size').value = config.size;
+        }
+
+        function render() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            apps.forEach((app, i) => grid.appendChild(createTile(app, i)));
+            
+            const add = document.createElement('div');
+            add.className = 'tile add-btn';
+            add.innerHTML = `<div class="icon-box"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></div><div class="label">Add</div>`;
+            add.onclick = () => openEdit(null);
+            grid.appendChild(add);
+        }
+
+        function getDomain(u) {
+            try { return new URL(u.startsWith('http') ? u : `https://${u}`).hostname; } catch{ return 'google.com'; }
+        }
+
+        function getIconUrl(app) {
+            if (app.src === 'custom') return app.custom;
+            const domain = getDomain(app.url);
+            if (app.src === 'yandex') return `https://favicon.yandex.net/favicon/${domain}`;
+            if (app.src === 'ddg') return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+            if (app.src === 'root') return `${new URL(app.url.startsWith('http') ? app.url : 'https://'+app.url).origin}/favicon.ico`;
+            return `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+        }
+
+        function createTile(app, idx) {
+            const el = document.createElement('div');
+            el.className = 'tile';
+            el.dataset.idx = idx;
+            el.dataset.id = app.id;
+
+            const src = getIconUrl(app);
+
+            el.innerHTML = `
+                <div class="icon-box">
+                    <img src="${src}" class="icon-img" style="transform: scale(${app.zoom/100 || 1})" 
+                    onerror="this.src='https://www.google.com/s2/favicons?sz=128&domain=${getDomain(app.url)}'"> 
+                </div>
+                <div class="label">${app.name}</div>
+            `;
+            attachTouch(el, app);
+            return el;
+        }
+
+        // --- MANAGE SHORTCUTS ---
+        function openManage() {
+            selectedIds.clear();
+            const grid = document.getElementById('manage-grid');
+            grid.innerHTML = '';
+            apps.forEach(app => {
+                const el = document.createElement('div');
+                el.className = 'manage-item';
+                const src = getIconUrl(app);
+                el.innerHTML = `<div class="icon-box" style="width:50px; height:50px;"><img src="${src}" style="width:100%; height:100%; object-fit:contain"></div><div class="check-overlay">✓</div>`;
+                el.onclick = () => {
+                    if(selectedIds.has(app.id)) { selectedIds.delete(app.id); el.classList.remove('selected'); } 
+                    else { selectedIds.add(app.id); el.classList.add('selected'); }
+                };
+                grid.appendChild(el);
+            });
+            openModal('modal-manage');
+        }
+
+        function deleteSelected() {
+            if(confirm(`Delete ${selectedIds.size} shortcuts?`)) {
+                apps = apps.filter(a => !selectedIds.has(a.id));
+                persist(); render(); closeModals();
+            }
+        }
+
+        function clearData() {
+            if(confirm("Factory Reset? This wipes all settings and shortcuts.")) {
+                localStorage.removeItem('brave_home_v7');
+                location.reload();
+            }
+        }
+
+        // --- DRAG ---
+        let dragTimer, isDrag, dragEl, ghost, startX, startY;
+        function attachTouch(el, app) {
+            el.addEventListener('touchstart', e => {
+                isDrag = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+                dragTimer = setTimeout(() => startDrag(el, startX, startY), 500);
+            }, {passive:false});
+            el.addEventListener('touchmove', e => {
+                if(isDrag) { e.preventDefault(); moveGhost(e.touches[0].clientX, e.touches[0].clientY); checkSwap(e.touches[0].clientX, e.touches[0].clientY); }
+                else if(Math.hypot(e.touches[0].clientX-startX, e.touches[0].clientY-startY) > 10) clearTimeout(dragTimer);
+            }, {passive:false});
+            el.addEventListener('touchend', e => {
+                clearTimeout(dragTimer);
+                if(isDrag) endDrag();
+                else if(Math.hypot(e.changedTouches[0].clientX-startX, e.changedTouches[0].clientY-startY) < 10) window.location.href = app.url;
+            });
+        }
+        function startDrag(el, x, y) {
+            isDrag = true; dragEl = el;
+            ghost = el.cloneNode(true); ghost.className = 'ghost'; ghost.style.width=el.offsetWidth+'px';
+            document.body.appendChild(ghost); moveGhost(x, y); el.classList.add('placeholder');
+        }
+        function moveGhost(x, y) { if(ghost) { ghost.style.left=(x-ghost.offsetWidth/2)+'px'; ghost.style.top=(y-ghost.offsetHeight/2)+'px'; } }
+        function checkSwap(x, y) {
+            const t = document.elementsFromPoint(x, y).find(e => e.classList.contains('tile') && e !== dragEl && !e.classList.contains('add-btn'));
+            if(t && dragEl) {
+                const s = parseInt(dragEl.dataset.idx), d = parseInt(t.dataset.idx);
+                if(s!==d) {
+                    const i = apps.splice(s,1)[0]; apps.splice(d,0,i);
+                    persist(); render();
+                    dragEl = document.querySelector(`[data-id="${i.id}"]`); dragEl.classList.add('placeholder');
+                }
+            }
+        }
+        function endDrag() {
+            const dx = parseFloat(ghost.style.left)+ghost.offsetWidth/2-startX, dy = parseFloat(ghost.style.top)+ghost.offsetHeight/2-startY;
+            ghost.remove(); dragEl.classList.remove('placeholder'); isDrag = false;
+            if(Math.hypot(dx, dy) < 10) openEdit(apps.find(a=>a.id==dragEl.dataset.id));
+        }
+
+        // --- SETTINGS ---
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModals() { document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); }
+        
+        ['rng-blur','rng-bright','rng-col','rng-size'].forEach(id => {
+            document.getElementById(id).addEventListener('input', e => {
+                if(id.includes('blur')) config.blur = e.target.value;
+                if(id.includes('bright')) config.bright = e.target.value;
+                if(id.includes('col')) config.cols = e.target.value;
+                if(id.includes('size')) config.size = e.target.value;
+                applyVisuals();
+            });
+            document.getElementById(id).addEventListener('change', () => { persist(); render(); });
+        });
+
+        document.getElementById('file-bg').addEventListener('change', e => {
+            const r = new FileReader();
+            r.onload = ev => { config.bg = ev.target.result; persist(); applyVisuals(); };
+            if(e.target.files[0]) r.readAsDataURL(e.target.files[0]);
+        });
+
+        // --- EDIT ---
+        function toggleCustomUrl() { document.getElementById('div-custom-url').style.display = (document.getElementById('inp-src').value === 'custom') ? 'block' : 'none'; }
+        function openEdit(app) {
+            document.getElementById('inp-id').value = app ? app.id : '';
+            document.getElementById('inp-name').value = app ? app.name : '';
+            document.getElementById('inp-url').value = app ? app.url : '';
+            document.getElementById('inp-src').value = app ? app.src : 'google';
+            document.getElementById('inp-custom').value = app ? app.custom : '';
+            document.getElementById('inp-zoom').value = app ? app.zoom : 100;
+            document.getElementById('edit-title').innerText = app ? 'Edit Shortcut' : 'Add Shortcut';
+            toggleCustomUrl();
+            openModal('modal-edit');
+        }
+        function saveShortcut() {
+            const id = document.getElementById('inp-id').value;
+            const obj = {
+                id: id || Date.now().toString(),
+                name: document.getElementById('inp-name').value,
+                url: document.getElementById('inp-url').value,
+                src: document.getElementById('inp-src').value,
+                custom: document.getElementById('inp-custom').value,
+                zoom: document.getElementById('inp-zoom').value
+            };
+            if(!obj.url.startsWith('http')) obj.url = 'https://' + obj.url;
+            if(id) apps[apps.findIndex(a=>a.id==id)] = obj; else apps.push(obj);
+            persist(); render(); closeModals();
+        }
+
+        // --- BOOKMARKS ---
+        document.getElementById('file-bm').addEventListener('change', e => {
+            const r = new FileReader();
+            r.onload = ev => {
+                const doc = new DOMParser().parseFromString(ev.target.result, "text/html");
+                const list = document.getElementById('folder-list'); list.innerHTML = '';
+                doc.querySelectorAll('h3').forEach(h3 => {
+                    const li = document.createElement('li'); li.style.padding='15px'; li.style.borderBottom='1px solid #333';
+                    li.innerText = h3.innerText;
+                    li.onclick = () => {
+                        if(h3.nextElementSibling) h3.nextElementSibling.querySelectorAll('a').forEach(a => apps.push({ id:Date.now()+Math.random(), name:a.innerText, url:a.href, src:'google' }));
+                        persist(); render(); closeModals();
+                    };
+                    list.appendChild(li);
+                });
+                openModal('modal-folder');
+            };
+            if(e.target.files[0]) r.readAsText(e.target.files[0]);
+        });
+    </script>
+</body>
+</html>
